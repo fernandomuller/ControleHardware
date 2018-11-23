@@ -6,24 +6,26 @@ MFRC522 mfrc522(SS_PIN, RST_PIN);   // Create MFRC522 instance.
 MFRC522::MIFARE_Key key;
 
 WiFiUDP ntpUDP; 
-int16_t utc = -3; //UTC -3:00 Brazil 
-NTPClient timeClient(ntpUDP, "a.st1.ntp.br", utc*3600, 60000);
+int16_t utc = -2; //UTC -3:00 Brazil 
+NTPClient timeClient(ntpUDP, "a.st1.ntp.br");//, utc*3600, 60000);
 
 void APP::init( ){
-  ledpin = D1;
-  button = D2;
-  buttonState=0;
-  delay(200);
+    ledpin = D1;
+    button = D2;
+    buttonState=0;
+    delay(200);
   
     SPI.begin();        // Init SPI bus
     mfrc522.PCD_Init(); // Init MFRC522 card
 
     timeClient.begin();
-  timeClient.update();
+    timeClient.update();
+
+    
    
     for (byte i = 0; i < 6; i++)key.keyByte[i] = 0xFF;
 
-	Serial.begin(115200);
+	  Serial.begin(115200);
     digitalWrite(button, LOW);
     pinMode(LED_BUILTIN,OUTPUT);
     pinMode(ledpin,OUTPUT);
@@ -39,7 +41,16 @@ void APP::init( ){
     Serial.println(data.field.ipPort);
     Serial.println(data.field.idSala);
     Serial.println(data.field.idBancada);     
-        
+
+    while ( !timeClient.update() ) {
+        Serial.println("Time Epoch: "+ String(timeClient.getEpochTime()));//printf
+        Serial.println("Time UTC: "+ timeClient.getFormattedTime()+ "  Brazil: UTC-2:00 ");
+        delay ( 3000 );
+    }
+      
+    Serial.println("Time Epoch: "+ String(timeClient.getEpochTime()));//printf
+    Serial.println("Time UTC: "+ timeClient.getFormattedTime()+ "  Brazil: UTC-2:00 ");
+    
     WiFiManager wifiManager;    
 
     if(data.field.ipFlag == 0){
@@ -104,6 +115,7 @@ void APP::init( ){
     
     Serial.print("softAPIP address1: "+WiFi.softAPIP());          
     Serial.print("localIP address: ");  Serial.println(WiFi.localIP());
+    Serial.print("GatewayIP address: ");  Serial.println(WiFi.gatewayIP().toString());    
     
     //if you get here you have connected to the WiFi
     Serial.println("Conectado na rede WiFi local!");    
@@ -189,49 +201,49 @@ void APP::readId(){
 }
 
 void APP::post(int inicio){
-  HTTPClient http;    //Declare object of class HTTPClient
-
-  StaticJsonDocument<500> doc;
-  JsonObject jsonData = doc.to<JsonObject>();
-      
-  jsonData["Funcionario_ID"] = registro.id;
-  jsonData["Bancada_ID"] = data.field.idBancada;
-  jsonData["Bancada_Sala_ID"] = data.field.idSala;
-  jsonData["Hora_inicio"] = String(registro.hora_inicio);
-
-  if(inicio > 0){
-        jsonData["Hora_fim"] = "0";        
-        timer = millis();
-  }else{
-      jsonData["Hora_fim"] = String(timeClient.getEpochTime());
-      registro.id = 0;
-      registro.hora_inicio = 0;   
-  }
-  IPAddress novoip(data.buf[1],data.buf[2], data.buf[3], data.buf[4]);
-
-  String  postData = "",
-          postIp   = novoip.toString(),//"192.168.1.102",
-          postPort = String(data.field.ipPort),//"5000",
-          postApp  = "utilizaBancada",
-          postDestination = "http://" + postIp + ":" + postPort + "/" + postApp;
-          
-  Serial.print(F("\nString postDestination: ")); Serial.println(postDestination);  
+    HTTPClient http;    //Declare object of class HTTPClient
   
-  serializeJson(jsonData,postData);
-  Serial.print(F("String postData: ")); Serial.println(postData);  
+    StaticJsonDocument<500> doc;
+    JsonObject jsonData = doc.to<JsonObject>();
+        
+    jsonData["Funcionario_ID"] = registro.id;
+    jsonData["Bancada_ID"] = data.field.idBancada;
+    jsonData["Bancada_Sala_ID"] = data.field.idSala;
+    jsonData["Hora_inicio"] = String(registro.hora_inicio);
   
-  http.begin(postDestination);    //Specify request destination
-  //http.begin("http://192.168.1.102:5000/insereSala");    //Specify request destination
-  http.addHeader("Content-Type", "application/json");    //Specify content-type header
-
-  Serial.println("\nFazendo Post no servidor...");
-  int httpCode = http.POST(postData);   //Send the request
-  String payload = http.getString();    //Get the response payload
-
-  Serial.println(httpCode);   //Print HTTP return code
-  Serial.println(payload);    //Print request response payload
-
-  http.end();  //Close connection
+    if(inicio > 0){
+          jsonData["Hora_fim"] = "0";        
+          timer = millis();
+    }else{
+        jsonData["Hora_fim"] = String(timeClient.getEpochTime());
+        registro.id = 0;
+        registro.hora_inicio = 0;   
+    }
+    IPAddress novoip(data.buf[1],data.buf[2], data.buf[3], data.buf[4]);
+  
+    String  postData = "",
+            postIp   = novoip.toString(),//"192.168.1.102",
+            postPort = String(data.field.ipPort),//"5000",
+            postApp  = "utilizaBancada",
+            postDestination = "http://" + postIp + ":" + postPort + "/" + postApp;
+            
+    Serial.print(F("\nString postDestination: ")); Serial.println(postDestination);  
+    
+    serializeJson(jsonData,postData);
+    Serial.print(F("String postData: ")); Serial.println(postData);  
+    
+    http.begin(postDestination);    //Specify request destination
+    //http.begin("http://192.168.1.102:5000/insereSala");    //Specify request destination
+    http.addHeader("Content-Type", "application/json");    //Specify content-type header
+  
+    Serial.println("\nFazendo Post no servidor...");
+    int httpCode = http.POST(postData);   //Send the request
+    String payload = http.getString();    //Get the response payload
+  
+    Serial.println(httpCode);   //Print HTTP return code
+    Serial.println(payload);    //Print request response payload
+  
+    http.end();  //Close connection
 
 }
 
@@ -239,6 +251,9 @@ void APP::funcaoApp(){
   
     currentMillis = millis();
     if (currentMillis - timer >= 30000) {
+
+        Serial.println("Time Epoch: "+ String(timeClient.getEpochTime()));//printf
+        Serial.println("Time UTC: "+ timeClient.getFormattedTime()+ "  Brazil: UTC-2:00 ");
 
         if(registro.id > 0){
             post(0);
@@ -253,17 +268,17 @@ void APP::funcaoApp(){
         }
         Serial.println();
 
-      Serial.print("IP Servidor: ");
-      for(int i = 1; i < 5; ++i){
-        Serial.print(data.buf[i]);
-        Serial.print(".");
-      }
-      Serial.println();
+        Serial.print("IP Servidor: ");
+        for(int i = 1; i < 5; ++i){
+          Serial.print(data.buf[i]);
+          Serial.print(".");
+        }
+        Serial.println();
         Serial.println(data.field.ipPort);
         Serial.println((int)data.field.idSala);
         Serial.println((int)data.field.idBancada);
          
-      digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
+        digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
     }
 }
 void APP::parseBytes(const char* str, char sep, char* bytes, int maxBytes, int base) {
